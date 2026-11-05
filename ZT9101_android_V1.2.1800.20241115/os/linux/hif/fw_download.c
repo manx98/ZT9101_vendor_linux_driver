@@ -101,6 +101,9 @@ zt_s32 zt_fw_download(void *node)
     int ret;
     zt_u8 value8;
 
+    if (hif_node->drv_ops->is_dv20)
+        return zt_dv20_fw_download(hif_node);
+
     re_dw_cnt = 0;
     DW_ALL_FW_FAIL_RETRY:
 

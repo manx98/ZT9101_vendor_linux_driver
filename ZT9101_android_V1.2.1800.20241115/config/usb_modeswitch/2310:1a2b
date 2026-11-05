@@ -1,0 +1,9 @@
+# ZTOP 9101DV20 installer CD -> WLAN.
+# Storage identity verified in the supplied Auto_eject.exe (0x401C10).
+# The supplied installer identifies the WLAN device as 2310:9086.
+DefaultVendor=0x2310
+DefaultProduct=0x1a2b
+TargetVendor=0x2310
+TargetProduct=0x9086
+StandardEject=1
+CheckSuccess=10

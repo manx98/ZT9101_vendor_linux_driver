@@ -1,5 +1,10 @@
 # ZTop ZT9101 Wireless LAN Driver
 
+Local experimental [ZT9101DV20 support](ZT9101_android_V1.2.1800.20241115/DV20.md)
+has been added from the device's Windows driver: the `2310:1a2b` installer CD
+switches to `2310:9086`, then uses a dedicated firmware/boot profile. Hardware
+validation is still required; compiling the module does not confirm networking.
+
 Linux kernel driver for ZTop ZT9101 chipset based USB WiFi adapters.
 
 **Fork with Linux kernel 7.1+ support, stability fixes, and DKMS integration.**

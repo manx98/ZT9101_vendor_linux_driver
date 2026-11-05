@@ -31,6 +31,9 @@ zt_s32 side_road_cfg(struct hif_node_ *node)
 {
     zt_u8  value8;
 
+    if (node->drv_ops->is_dv20)
+        return zt_dv20_usb_init(node);
+
     value8 = hif_io_read8(node, 0xac, NULL);
     value8 |= 0x02;
     hif_io_write8(node, 0xac, value8);
@@ -241,7 +244,10 @@ zt_s32 power_on(struct hif_node_ *node)
 
     // check chip status first
     value8 = hif_io_read8(node, 0xac, NULL);
-    if (value8 & 0x10)
+    /* DV20 Windows power-on pulses bit 0 directly; a full power_off here can
+     * reset the just-ejected USB personality before its firmware is loaded.
+     */
+    if ((value8 & 0x10) && !node->drv_ops->is_dv20)
     {
         value16 = hif_io_read16(node, 0xec, NULL);
         LOG_D("[%s] power on status 0xec:0x%x", __func__, value16);

@@ -61,6 +61,7 @@ struct device_info_ops
 {
     const uint8_t firmware_no;
     const uint8_t driver_flag;
+    const uint8_t is_dv20;
 };
 
 struct hif_node_
@@ -221,6 +222,10 @@ zt_s32 hif_tasklet_tx_handle(hif_node_st *hif_info);
 #ifdef CONFIG_ZT9101XV20_SUPPORT
 extern struct device_info_ops ZT9101XV20_Info;
 #endif
+
+extern struct device_info_ops ZT9101DV20_Info;
+int zt_dv20_usb_init(hif_node_st *node);
+int zt_dv20_fw_download(hif_node_st *node);
 
 
 #ifdef CONFIG_ZT9101XV30_SUPPORT

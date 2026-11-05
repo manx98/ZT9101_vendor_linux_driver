@@ -34,6 +34,7 @@
 #include "cfg_parse.h"
 #include "power.h"
 #include "rx_linux.h"
+#include "dv20_protocol.h"
 
 #define TX_CMD_PARAM_LENGTH    12
 #define TXDESC_OFFSET_NEW      20
@@ -806,7 +807,8 @@ zt_s32 hif_chip_reset(hif_node_st *hif_info)
     }
 
     LOG_D("zt_power_on success");
-    side_road_cfg(hif_info);
+    if (side_road_cfg(hif_info))
+        return ZT_RETURN_FAIL;
 
     if (HIF_SDIO == hif_info->hif_type)
     {
@@ -880,7 +882,8 @@ DEV_REINSERT:
     }
 
     LOG_D("zt_power_on success");
-    side_road_cfg(hif_info);
+    if (side_road_cfg(hif_info))
+        return ZT_RETURN_FAIL;
 
     if (HIF_SDIO == hif_info->hif_type)
     {
@@ -1132,18 +1135,7 @@ static void io_txdesc_chksum(zt_u8 *ptx_desc)
 
 static zt_u16 io_firmware_chksum(zt_u8 *firmware, zt_u32 len)
 {
-    zt_u32 loop;
-    zt_u16 *u16Ptr = (zt_u16 *) firmware;
-    zt_u32 index;
-    zt_u16 checksum = 0;
-
-    loop = len / 2;
-    for (index = 0; index < loop; index++)
-    {
-        checksum ^= zt_le16_to_cpu(*(u16Ptr + index));
-    }
-
-    return checksum;
+    return zt_dv20_fw_checksum(firmware, len);
 }
 
 zt_s32 zt_hif_bulk_enable(hif_node_st *hif_node)
@@ -1286,6 +1278,7 @@ zt_s32 hif_write_firmware(void *node, zt_u8 which, zt_u8 *firmware, zt_u32 len)
     zt_u32 buffer_len;
     zt_u32 back_len;
     zt_u32 send_once;
+    zt_u32 payload_len;
     zt_u32 send_len;
     zt_u32 send_size;
     zt_u32 remain_size;
@@ -1360,13 +1353,15 @@ zt_s32 hif_write_firmware(void *node, zt_u8 which, zt_u8 *firmware, zt_u32 len)
             send_once = remain_size;
         }
 
-        zt_memcpy(ptx_desc + TXDESC_OFFSET_NEW, firmware + send_size, send_once);
+        payload_len = send_once;
+        zt_dv20_fw_chunk(ptx_desc + TXDESC_OFFSET_NEW, firmware,
+                         len, send_size, payload_len);
 
         send_len = TXDESC_OFFSET_NEW + send_once;
         /* set for  firmware checksum */
         if (i == (block_num - 1))
         {
-            checksum = io_firmware_chksum(firmware, align_len);
+            checksum = io_firmware_chksum(firmware, len);
             LOG_I("cal checksum=%d", checksum);
             zt_set_bits_to_le_u32(ptx_desc + send_len, 0, 32, checksum);
             LOG_D("my checksum is 0x%04x, fw_len=%d", checksum, align_len);
@@ -1385,8 +1380,8 @@ zt_s32 hif_write_firmware(void *node, zt_u8 which, zt_u8 *firmware, zt_u32 len)
             return -1;
         }
 
-        send_size += send_once;
-        remain_size -= send_once;
+        send_size += payload_len;
+        remain_size -= payload_len;
 
         zt_msleep(1);
     }
@@ -1546,6 +1541,13 @@ struct device_info_ops ZT9101XV20_Info =
 };
 #endif
 
+struct device_info_ops ZT9101DV20_Info =
+{
+    .firmware_no = 0,
+    .driver_flag = 0,
+    .is_dv20 = 1,
+};
+
 
 #ifdef CONFIG_ZT9101XV30_SUPPORT
 struct device_info_ops ZT9101XV30_Info =
@@ -1562,6 +1564,7 @@ module_exit(hif_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("ZTOP Wireless Lan Driver");
 MODULE_AUTHOR("ZTOP Semiconductor Corp.");
+MODULE_VERSION("1.2.1800-dv20.1");
 
 
 

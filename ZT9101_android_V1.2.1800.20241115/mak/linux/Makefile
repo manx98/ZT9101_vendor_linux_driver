@@ -35,6 +35,10 @@ ifeq ($(CONFIG_ZT9101XV20_SUPPORT), y)
 ccflags-y += -DCONFIG_ZT9101XV20_SUPPORT
 endif
 
+ifeq ($(CONFIG_ZT9101DV20_SUPPORT), y)
+ccflags-y += -DCONFIG_ZT9101DV20_SUPPORT
+endif
+
 ifeq ($(CONFIG_ZT9101XV30_SUPPORT), y)
 ccflags-y += -DCONFIG_ZT9101XV30_SUPPORT
 endif
@@ -146,6 +150,14 @@ install:
 	install -p -m 644 $(MODULE_NAME).ko  $(MODDESTDIR)
 	/sbin/depmod -a ${KVER}
 
+# Use this target for DV20; the existing install target installs only the ko.
+install-dv20:
+	/bin/sh script/install_dv20_config.sh
+	$(MAKE) install
+
+install-dv20-config:
+	/bin/sh script/install_dv20_config.sh
+
 uninstall:
 	rm -f $(MODDESTDIR)/$(MODULE_NAME).ko
 	/sbin/depmod -a ${KVER}
@@ -155,7 +167,7 @@ config_r:
 	/bin/bash script/Configure script/config.in
 
 
-.PHONY: all modules clean install uninstall
+.PHONY: all modules clean install uninstall install-dv20 install-dv20-config
 
 clean:
 	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) -C $(KSRC) M=$(WDRV_DIR)  clean
@@ -186,6 +198,7 @@ $(MODULE_NAME)-y += os/linux/hif/hif_io.o
 $(MODULE_NAME)-y += os/linux/hif/cfg_parse.o
 $(MODULE_NAME)-y += os/linux/hif/hw_ctrl.o
 $(MODULE_NAME)-y += os/linux/hif/fw_download.o
+$(MODULE_NAME)-y += os/linux/hif/dv20.o
 $(MODULE_NAME)-y += os/linux/hif/hif_queue.o
 $(MODULE_NAME)-y += os/linux/netdev/ndev_linux.o
 $(MODULE_NAME)-y += os/linux/iw/iw.o

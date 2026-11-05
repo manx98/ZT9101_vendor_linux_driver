@@ -1,0 +1,6 @@
+# Use the distribution usb_modeswitch dispatcher for the confirmed installer CD.
+ACTION!="add", GOTO="zt9101_modeswitch_end"
+SUBSYSTEM!="usb", GOTO="zt9101_modeswitch_end"
+ENV{DEVTYPE}!="usb_device", GOTO="zt9101_modeswitch_end"
+ATTR{idVendor}=="2310", ATTR{idProduct}=="1a2b", RUN+="usb_modeswitch '/%k'"
+LABEL="zt9101_modeswitch_end"

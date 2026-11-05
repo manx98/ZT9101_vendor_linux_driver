@@ -168,8 +168,9 @@ zt_s32 zt_endpoint_deinit(struct usb_interface *pusb_intf)
     usb_set_intfdata(pusb_intf, NULL);
     if (pusb_mngt)
     {
-        if ((pusb_mngt->n_interfaces != 2 && pusb_mngt->n_interfaces != 3)
-                || (pusb_mngt->intface_num == 1))
+        if (!hif_node->drv_ops->is_dv20 &&
+            ((pusb_mngt->n_interfaces != 2 && pusb_mngt->n_interfaces != 3)
+                || (pusb_mngt->intface_num == 1)))
         {
             if (interface_to_usbdev(pusb_intf)->state != USB_STATE_NOTATTACHED)
             {
@@ -871,6 +872,7 @@ static zt_s32 zt_usb_probe(struct usb_interface *pusb_intf,
     hif_usb_mngt *pusb_mngt = NULL;
     //zt_u32 version          = 0;
     zt_s32 ret                 = 0;
+    zt_bool endpoint_ready = zt_false;
 
     LOG_D("************USB CONNECT*************");
 
@@ -892,6 +894,7 @@ static zt_s32 zt_usb_probe(struct usb_interface *pusb_intf,
         goto exit;
     }
 
+    endpoint_ready = zt_true;
     pctrl_buffer = zt_kzalloc(USB_CONTROL_MSG_BF_LEN);
     if (NULL == pctrl_buffer)
     {
@@ -922,9 +925,6 @@ static zt_s32 zt_usb_probe(struct usb_interface *pusb_intf,
     if (hif_dev_insert(hif_node) < 0)
     {
         USB_WARN("[usb] hif dev insert error !!");
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0))
-        usb_put_dev(interface_to_usbdev(pusb_intf));
-#endif
         ret = -ENODEV;
         goto exit;
     }
@@ -937,10 +937,22 @@ exit :
 
     if (ret < 0)
     {
+        if (hif_node)
+        {
+            /* hif_dev_insert unwinds its queues on failure. Do not retain a
+             * phantom interface after a missing/failed DV20 firmware load.
+             */
+            usb_set_intfdata(pusb_intf, NULL);
+            hm_del_usb_id(hif_node->u.usb.usb_id);
+            hif_node_unregister(hif_node);
+        }
         if (pctrl_buffer)
         {
             zt_kfree(pctrl_buffer);
         }
+        /* endpoint_init acquires its reference only on success. */
+        if (endpoint_ready)
+            usb_put_dev(interface_to_usbdev(pusb_intf));
     }
 
     return ret;
@@ -1082,9 +1094,15 @@ static struct usb_device_id zt_usb_id_tbl[] =
         USB_DEVICE_AND_INTERFACE_INFO(0x350b, 0x9101, 0xff, 0xff, 0xff),
         .driver_info = (unsigned long) &ZT9101XV20_Info
     },
+#endif
+#if defined(CONFIG_ZT9101DV20_SUPPORT) || defined(CONFIG_ZT9101XV20_SUPPORT)
     {
         USB_DEVICE_AND_INTERFACE_INFO(0x2310, 0x9086, 0xff, 0xff, 0xff),
+#ifdef CONFIG_ZT9101DV20_SUPPORT
+        .driver_info = (unsigned long) &ZT9101DV20_Info
+#else
         .driver_info = (unsigned long) &ZT9101XV20_Info
+#endif
     },
 #endif
 #ifdef CONFIG_ZT9101XV30_SUPPORT

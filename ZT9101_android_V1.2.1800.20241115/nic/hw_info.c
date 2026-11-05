@@ -802,16 +802,31 @@ zt_s32 zt_hw_info_set_default_cfg(nic_info_st *nic_info)
         return ZT_RETURN_FAIL;
     }
 
-    ret = mp_proc_hw_init(nic_info);
-    if (ret != ZT_RETURN_OK)
+    /* The DV20 Windows initialization does ARS before FW_INIT and does not
+     * send the newer RF power-table command (0x4a).
+     */
+    if (hif_node->drv_ops->is_dv20)
     {
-        return ZT_RETURN_FAIL;
+        ret = zt_mcu_ars_init(nic_info);
+        if (ret != ZT_RETURN_OK)
+            return ret;
+        ret = zt_mcu_ars_switch(nic_info, zt_true);
+        if (ret != ZT_RETURN_OK)
+            return ret;
     }
-
-    ret = zt_mcu_rf_power_init(nic_info);
-    if (ret != ZT_RETURN_OK)
+    else
     {
-        return ZT_RETURN_FAIL;
+        ret = mp_proc_hw_init(nic_info);
+        if (ret != ZT_RETURN_OK)
+        {
+            return ZT_RETURN_FAIL;
+        }
+
+        ret = zt_mcu_rf_power_init(nic_info);
+        if (ret != ZT_RETURN_OK)
+        {
+            return ZT_RETURN_FAIL;
+        }
     }
 
     if (local_info->work_mode == ZT_INFRA_MODE)
@@ -839,6 +854,8 @@ zt_s32 zt_hw_info_set_default_cfg(nic_info_st *nic_info)
 #ifdef CONFIG_STA_AND_AP_MODE
     hw_param.concurrent_mode = 1;
 #endif
+    if (hif_node->drv_ops->is_dv20)
+        hw_param.concurrent_mode = 1;
 
 #ifdef CONFIG_SOFT_RX_AGGREGATION
     hw_param.rx_agg_enable = 1;
@@ -853,30 +870,33 @@ zt_s32 zt_hw_info_set_default_cfg(nic_info_st *nic_info)
         return ZT_RETURN_FAIL;
     }
 
-    ret = zt_mcu_ars_init(nic_info);
-    if (ret != ZT_RETURN_OK)
+    if (!hif_node->drv_ops->is_dv20)
     {
-        return ZT_RETURN_FAIL;
-    }
-
-#ifndef CONFIG_MP_MODE
-    /* ars enable fw default close */
-    ret = zt_mcu_ars_switch(nic_info, zt_true);
-    if (ret != ZT_RETURN_OK)
-    {
-        return ZT_RETURN_FAIL;
-    }
-
-    if (hif_node->drv_ops->driver_flag)
-    {
-        /* enable periodic lck */
-        ret = zt_mcu_periodic_lck_switch(nic_info, 1);
+        ret = zt_mcu_ars_init(nic_info);
         if (ret != ZT_RETURN_OK)
         {
             return ZT_RETURN_FAIL;
         }
-    }
+
+#ifndef CONFIG_MP_MODE
+        /* ars enable fw default close */
+        ret = zt_mcu_ars_switch(nic_info, zt_true);
+        if (ret != ZT_RETURN_OK)
+        {
+            return ZT_RETURN_FAIL;
+        }
+
+        if (hif_node->drv_ops->driver_flag)
+        {
+            /* enable periodic lck */
+            ret = zt_mcu_periodic_lck_switch(nic_info, 1);
+            if (ret != ZT_RETURN_OK)
+            {
+                return ZT_RETURN_FAIL;
+            }
+        }
 #endif
+    }
 
     return ZT_RETURN_OK;
 }

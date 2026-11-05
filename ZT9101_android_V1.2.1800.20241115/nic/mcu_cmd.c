@@ -440,7 +440,9 @@ zt_s32 zt_mcu_get_chip_version(nic_info_st *nic_info, zt_u32 *version)
     zt_timer_set(&timeout, 2000);
     do
     {
-        ret = mcu_cmd_communicate(nic_info, UMSG_OPS_READ_VERSION, &chip_val, 1,
+        ret = mcu_cmd_communicate(nic_info, UMSG_OPS_READ_VERSION,
+                                  hif_node->drv_ops->is_dv20 ? NULL : &chip_val,
+                                  hif_node->drv_ops->is_dv20 ? 0 : 1,
                                   version, 1);
         if (ZT_RETURN_FAIL == ret)
         {
