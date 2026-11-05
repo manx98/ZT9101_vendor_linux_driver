@@ -965,26 +965,28 @@ static void zt_usb_disconnect(struct usb_interface *pusb_intf)
 
     LOG_D("************USB DISCONNECT*************");
 
+    /* A failed or partially unwound probe may leave no interface data.
+     * Never dereference it on the USB disconnect path.
+     */
+    if (hif_node == NULL)
+    {
+        USB_WARN("[usb] disconnect without hif node");
+        return;
+    }
+
     /* ndev unregister should been do first */
     ndev_unregister_all(hif_node->nic_info, hif_node->nic_number);
 
     hif_dev_removed(hif_node);
 
-    if (NULL != hif_node)
+    ret = hm_del_usb_id(hif_node->u.usb.usb_id);
+    if (ret)
     {
-        ret = hm_del_usb_id(hif_node->u.usb.usb_id);
-        if (ret)
-        {
-            USB_WARN("hm_del_usb_id [%d] failed", hif_node->u.usb.usb_id);
-        }
-        zt_kfree(hif_node->u.usb.ctrl_msg_buffer);
-        zt_endpoint_deinit(pusb_intf);
-        hif_node_unregister(hif_node);
+        USB_WARN("hm_del_usb_id [%d] failed", hif_node->u.usb.usb_id);
     }
-    else
-    {
-        USB_WARN("[usb] zt_usb_disconnect failed");
-    }
+    zt_kfree(hif_node->u.usb.ctrl_msg_buffer);
+    zt_endpoint_deinit(pusb_intf);
+    hif_node_unregister(hif_node);
 }
 
 static zt_s32 zt_usb_suspend(struct usb_interface *pusb_intf,
@@ -1047,6 +1049,12 @@ static zt_s32 zt_usb_resume(struct usb_interface *pusb_intf)
     zt_u32 i = 0;
 
     USB_DBG();
+
+    if (hif_node == NULL)
+    {
+        USB_ERROR("resume without hif node");
+        return -ENODEV;
+    }
 
     if (power_resume(hif_node))
     {

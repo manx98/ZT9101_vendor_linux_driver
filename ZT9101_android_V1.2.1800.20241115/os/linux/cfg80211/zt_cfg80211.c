@@ -752,6 +752,7 @@ static zt_s32 zt_cfg80211_sta_set_encryption(struct net_device *dev,
             if (pwdn_info == NULL)
             {
                 CFG80211_WARN("pwdn_info NULL !!!!!!");
+                res = -ENOENT;
                 goto exit;
             }
 
@@ -790,9 +791,15 @@ static zt_s32 zt_cfg80211_sta_set_encryption(struct net_device *dev,
                 if (param->alg == WLAN_CIPHER_SUITE_CCMP)
                 {
                     CFG80211_DBG("sta_hw_set_unicast_key");
-                    zt_sec_sta_set_unicast_key(pnic_info, &pwdn_info->unicast_cam_id,
-                                               pwdn_info->dot118021XPrivacy,
-                                               pwdn_info->mac, pwdn_info->dot118021x_UncstKey.skey);
+                    res = zt_sec_sta_set_unicast_key(pnic_info, &pwdn_info->unicast_cam_id,
+                                                     pwdn_info->dot118021XPrivacy,
+                                                     pwdn_info->mac, pwdn_info->dot118021x_UncstKey.skey);
+                    if (res)
+                    {
+                        CFG80211_WARN("failed to install STA CCMP pairwise key: %d", res);
+                        res = -EIO;
+                        goto exit;
+                    }
                 }
             }
             else /* group key */
@@ -811,7 +818,14 @@ static zt_s32 zt_cfg80211_sta_set_encryption(struct net_device *dev,
                 if (psec_info->dot118021XGrpPrivacy == _AES_)
                 {
                     CFG80211_DBG("sta_hw_set_group_key");
-                    zt_sec_sta_set_group_key(pnic_info, &pwdn_info->group_cam_id, pwdn_info->bssid);
+                    res = zt_sec_sta_set_group_key(pnic_info, &pwdn_info->group_cam_id,
+                                                   pwdn_info->bssid);
+                    if (res)
+                    {
+                        CFG80211_WARN("failed to install STA CCMP group key: %d", res);
+                        res = -EIO;
+                        goto exit;
+                    }
                 }
 
                 if (zt_p2p_is_valid(pnic_info))

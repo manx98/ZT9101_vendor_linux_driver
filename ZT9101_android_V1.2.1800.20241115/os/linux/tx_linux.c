@@ -290,18 +290,25 @@ void tx_work_term(struct net_device *ndev)
     nic_info = ndev_priv->nic;
     tx_info = nic_info->tx_info;
 
+    /* The tasklet consumes the same pending queue. Stop it before draining
+     * frames so a USB disconnect cannot race the teardown path.
+     */
+    tasklet_kill(&ndev_priv->get_tx_data_task);
+
     while (zt_que_is_empty(&tx_info->pending_frame_queue) == zt_false)
     {
         pxmitframe = zt_tx_data_getqueue(tx_info);
-        zt_xmit_frame_delete(tx_info, pxmitframe);
+        if (!pxmitframe)
+        {
+            break;
+        }
         if (pxmitframe->pkt)
         {
             zt_free_skb(pxmitframe->pkt);
             pxmitframe->pkt = NULL;
         }
+        zt_xmit_frame_delete(tx_info, pxmitframe);
     }
-
-    tasklet_kill(&ndev_priv->get_tx_data_task);
 }
 
 void tx_work_wake(struct net_device *ndev)
