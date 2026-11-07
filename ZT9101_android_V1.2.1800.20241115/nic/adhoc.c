@@ -895,8 +895,13 @@ zt_s32 zt_adhoc_bcn_msg_send(nic_info_st *pnic_info, zt_80211_mgmt_t *pmgmt,
             ADHOC_WARN("msg new fail error fail: %d", rst);
             return -3;
         }
+        if (zt_msg_copy(pmsg, 0, pmgmt, mgmt_len))
+        {
+            zt_msg_del(pmsg_que, pmsg);
+            ADHOC_WARN("IBSS beacon larger than allocated message");
+            return -5;
+        }
         pmsg->len = mgmt_len;
-        zt_memcpy(pmsg->value, pmgmt, mgmt_len);
         rst = zt_msg_push(pmsg_que, pmsg);
         if (rst)
         {

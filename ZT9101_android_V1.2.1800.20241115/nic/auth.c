@@ -877,8 +877,13 @@ zt_s32 auth_sta_recv(nic_info_st *pnic_info, wdn_net_info_st *pwdn_info,
             AUTH_DBG("new msg fail, error code: %d", rst);
             return -6;
         }
+        if (zt_msg_copy(pmsg, 0, pmgmt, mgmt_len))
+        {
+            zt_msg_del(pmsg_que, pmsg);
+            AUTH_WARN("auth response larger than allocated message");
+            return -8;
+        }
         pmsg->len = mgmt_len;
-        zt_memcpy(pmsg->value, pmgmt, mgmt_len);
         rst = zt_msg_push(pmsg_que, pmsg);
         if (rst)
         {

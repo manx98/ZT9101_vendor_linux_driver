@@ -76,6 +76,9 @@ zt_inline static zt_bool zt_msg_is_empty(zt_msg_que_t *pmsg_que)
 
 zt_s32 zt_msg_new(zt_msg_que_t *pmsg_que, zt_msg_tag_t tag,
                   zt_msg_t **pnew_msg);
+/* Copy into the dynamically allocated value area, with an allocation bound. */
+zt_s32 zt_msg_copy(zt_msg_t *pmsg, zt_u32 offset,
+                   const void *src, zt_u32 size);
 zt_s32 zt_msg_push(zt_msg_que_t *pmsg_que, zt_msg_t *pmsg);
 zt_s32 zt_msg_push_head(zt_msg_que_t *pmsg_que, zt_msg_t *pmsg);
 zt_s32 msg_get(zt_msg_que_t *pmsg_que, zt_msg_t **pmsg,

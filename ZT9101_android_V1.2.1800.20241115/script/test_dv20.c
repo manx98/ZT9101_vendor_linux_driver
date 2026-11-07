@@ -91,6 +91,21 @@ static void test_boot(void)
     assert(zt_dv20_usb_prepare(&io) == -EIO);
     assert(zt_dv20_rom_prepare(&io, 1) == -EIO);
     assert(m.count == 0);
+
+    /* Warm firmware reuse requires BOTH the MCU startup bit and mailbox. */
+    m.fail = 0;
+    m.registers[0x94] = 0x17;
+    m.reads = 0;
+    m.ready_after = 1;
+    assert(zt_dv20_fw_running(&io) == 1);
+    m.registers[0x94] = 0x16;
+    assert(zt_dv20_fw_running(&io) == 0);
+    m.registers[0x94] = 0x17;
+    m.ready_after = 100;
+    m.reads = 0;
+    assert(zt_dv20_fw_running(&io) == 0);
+    m.fail = 1;
+    assert(zt_dv20_fw_running(&io) == 0);
 }
 
 static void put32(unsigned char *p, unsigned int value)

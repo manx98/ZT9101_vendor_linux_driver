@@ -89,6 +89,27 @@ exit:
     return rst;
 }
 
+zt_s32 zt_msg_copy(zt_msg_t *pmsg, zt_u32 offset,
+                   const void *src, zt_u32 size)
+{
+    if (!pmsg || (size && !src) || offset > pmsg->alloc_value_size ||
+            size > pmsg->alloc_value_size - offset)
+    {
+        return -1;
+    }
+
+    if (size)
+    {
+        /* value[0] is trailing storage allocated by zt_msg_alloc().
+         * Address it through the containing allocation, rather than asking
+         * FORTIFY to treat the zero-sized member as a fixed-size array.
+         */
+        void *dst = (zt_u8 *)pmsg + ZT_OFFSETOF(zt_msg_t, value) + offset;
+        zt_memcpy(dst, src, size);
+    }
+    return 0;
+}
+
 zt_s32 zt_msg_push(zt_msg_que_t *pmsg_que, zt_msg_t *pmsg)
 {
     zt_que_list_t *pos;

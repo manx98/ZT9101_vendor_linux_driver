@@ -861,29 +861,41 @@ zt_s32 hif_dev_insert(hif_node_st *hif_info)
     zt_s32 i   = 0;
     zt_s32 nic_num = 0;
     zt_u8 re_insert_cnt = 0;
+    zt_bool dv20_warm_reuse;
+    zt_u32 dv20_debug_args[2] = {8, 0x8000};
 
 DEV_REINSERT:
     hif_info->dev_removed = zt_false;
 
+    /* Probe BEFORE power_on() toggles the DV20 reset bit. Reusing a known
+     * live firmware avoids re-downloading code over an active USB function.
+     * A non-ready mailbox still takes the ordinary cold-load path.
+     */
+    dv20_warm_reuse = hif_info->drv_ops->is_dv20 &&
+                      zt_dv20_fw_is_running(hif_info);
+
     /* power on */
     LOG_D("************HIF DEV INSERT*************");
-    LOG_D("<< Power on >>");
-    i = 0;
-    while (power_on(hif_info) < 0)
+    if (!dv20_warm_reuse)
     {
-        i++;
-        LOG_E("===>power on error, times->%d", i);
-        if (i >= 5)
+        LOG_D("<< Power on >>");
+        i = 0;
+        while (power_on(hif_info) < 0)
         {
-            LOG_E("===>power_on error, exit!!");
-            return -1;
+            i++;
+            LOG_E("===>power on error, times->%d", i);
+            if (i >= 5)
+            {
+                LOG_E("===>power_on error, exit!!");
+                return -1;
+            }
+            zt_msleep(500);
         }
-        zt_msleep(500);
-    }
 
-    LOG_D("zt_power_on success");
-    if (side_road_cfg(hif_info))
-        return ZT_RETURN_FAIL;
+        LOG_D("zt_power_on success");
+        if (side_road_cfg(hif_info))
+            return ZT_RETURN_FAIL;
+    }
 
     if (HIF_SDIO == hif_info->hif_type)
     {
@@ -923,7 +935,27 @@ DEV_REINSERT:
     LOG_D("   hif_type   :%d  [1:usb  2:sdio]", hif_info->hif_type);
 
     /* fw download */
-    ret = zt_fw_download(hif_info);
+    if (dv20_warm_reuse)
+    {
+        /* 0x3e8 == 0x55 only proves that MCU code reached startup.  After
+         * a QEMU USB detach it can remain 0x55 even when the USB bulk
+         * command path has stopped replying. Verify an actual FW roundtrip
+         * before proceeding with NIC registration. This is the same benign
+         * command used immediately after a successful cold FW download.
+         */
+        ret = hif_write_cmd(hif_info, UMSG_OPS_HAL_DBGLOG_CONFIG,
+                            dv20_debug_args, 2, NULL, 0);
+        if (ret)
+        {
+            LOG_E("DV20 warm reconnect: MCU ready but bulk command failed; "
+                  "reconnect aborted (device may require physical power cycle)");
+            ret = ZT_RETURN_FAIL;
+            goto err_queue;
+        }
+        LOG_I("DV20 warm reconnect: firmware command OK, reused running firmware");
+    }
+    else
+        ret = zt_fw_download(hif_info);
     if (ret)
     {
         re_insert_cnt++;
@@ -996,11 +1028,18 @@ err_hw:
         hif_info->nic_info[i] = NULL;
     }
 err_queue:
+    /* A failed firmware download may leave asynchronous RX URBs active. */
+    hif_info->dev_removed = zt_true;
     zt_hif_queue_disable(hif_info);
 err_bulk:
-    zt_hif_bulk_disable(hif_info);
+    hif_info->dev_removed = zt_true;
 err_qmngt:
+    hif_info->dev_removed = zt_true;
+    /* Kill URBs before freeing bulk command/firmware buffers: an in-flight
+     * receive completion may otherwise still reference those buffers.
+     */
     zt_data_queue_mngt_term(hif_info);
+    zt_hif_bulk_disable(hif_info);
     return ret;
 }
 
@@ -1022,11 +1061,11 @@ void  hif_dev_removed(hif_node_st *hif_info)
     }
     zt_hif_queue_disable(hif_info);
 
-    zt_hif_bulk_disable(hif_info);
-
-    /* term hif trx mode */
+    /* Cancel and join all RX/TX URBs while bulk buffers are still valid. */
     LOG_D("<< term hif tx/rx queue >>");
     zt_data_queue_mngt_term(hif_info);
+
+    zt_hif_bulk_disable(hif_info);
 
     /*proc term*/
     zt_proc_term(hif_info);

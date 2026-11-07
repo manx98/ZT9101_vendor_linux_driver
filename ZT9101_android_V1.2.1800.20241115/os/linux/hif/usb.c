@@ -257,6 +257,12 @@ static inline void usb_write_port_complete(struct urb *purb)
     data_queue_mngt_st *dqm         = &hnode->trx_pipe;
     zt_s32 i                        = 0;
 
+    /* Teardown will free the queues after killing all outstanding URBs. */
+    if (hnode->dev_removed || hm_get_mod_removed())
+    {
+        return;
+    }
+
     if (0 == purb->status) //usb work well
     {
         qnode->state = TX_STATE_COMPETE;
@@ -347,6 +353,21 @@ static inline void usb_read_port_complete(struct urb *purb)
     hif_usb_mngt *pusb_mngt     = &(hnode->u.usb);
     skb = (struct sk_buff *)qnode->buff;
 
+    /* usb_kill_urb() may complete a request while the device is being
+     * removed. Do not touch queues or resubmit it during teardown.
+     */
+    if (hnode->dev_removed || hm_get_mod_removed())
+    {
+        return;
+    }
+
+    if (!skb)
+    {
+        USB_WARN("RX completion without skb, status=%d", purb->status);
+        zt_data_queue_insert(&hnode->trx_pipe.free_rx_queue, qnode);
+        return;
+    }
+
     if (0 == purb->status) //usb work well
     {
 #define MIN_RXD_SIZE      16
@@ -422,7 +443,9 @@ static inline void usb_read_port_complete(struct urb *purb)
     }
     else//usb work bad
     {
+        skb_trim(skb, 0);
         skb_queue_tail(&hnode->trx_pipe.free_rx_queue_skb, skb);
+        qnode->buff = NULL;
         zt_data_queue_insert(&hnode->trx_pipe.free_rx_queue, qnode);
         //LOG_I("[%s]:usb read work bad, urb->status:%d  node_id:%d", __func__, purb->status, qnode->node_id);
         switch (purb->status)
@@ -497,7 +520,7 @@ static zt_s32 zt_usb_read_port(hif_node_st *hif_node, zt_u32 addr, zt_u8 *rdata,
     data_queue_mngt_st *trxq        = (data_queue_mngt_st *)&hif_node->trx_pipe;
     //LOG_D("qnode->node_id:%d", qnode->node_id);
 
-    if ((hm_get_mod_removed() == zt_false) && (hif_node->dev_removed == zt_true))
+    if (hm_get_mod_removed() || hif_node->dev_removed)
     {
         return ZT_RETURN_FAIL;
     }
@@ -532,7 +555,7 @@ static zt_s32 zt_usb_read_port(hif_node_st *hif_node, zt_u32 addr, zt_u8 *rdata,
     usb_fill_bulk_urb(purb, pusbd, pipe, pskb->data,  ZT_MAX_RECV_BUFF_LEN_USB,
                       usb_read_port_complete, qnode);
     ret = usb_submit_urb(purb, GFP_ATOMIC);
-    if (ret && ret != (-EPERM))
+    if (ret)
     {
         LOG_E("cannot submit rx in-token(ret = %d), urb_status = %d\n", ret,
               purb->status);
@@ -844,8 +867,12 @@ static zt_s32 zt_usb_alloc_urb(data_queue_node_st *data_node)
 
 static zt_s32 zt_usb_free_urb(data_queue_node_st *data_node)
 {
-    usb_kill_urb(data_node->hif_dev);
-    usb_free_urb(data_node->hif_dev);
+    if (data_node->hif_dev)
+    {
+        usb_kill_urb(data_node->hif_dev);
+        usb_free_urb(data_node->hif_dev);
+        data_node->hif_dev = NULL;
+    }
 
     return 0;
 }
@@ -973,6 +1000,8 @@ static void zt_usb_disconnect(struct usb_interface *pusb_intf)
         USB_WARN("[usb] disconnect without hif node");
         return;
     }
+
+    hif_node->dev_removed = zt_true;
 
     /* ndev unregister should been do first */
     ndev_unregister_all(hif_node->nic_info, hif_node->nic_number);

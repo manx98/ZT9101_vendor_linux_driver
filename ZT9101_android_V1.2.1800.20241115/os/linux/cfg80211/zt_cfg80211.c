@@ -933,6 +933,12 @@ static zt_s32 _add_key_cb(struct wiphy *wiphy,
         return -EINVAL;
     }
 
+    if (!params || params->key_len < 0 || params->key_len > 64 ||
+            (params->key_len && !params->key))
+    {
+        return -EINVAL;
+    }
+
     param_len = ZT_OFFSETOF(struct cfg80211_crypt, key) + params->key_len;
     param = (struct cfg80211_crypt *)zt_kzalloc(param_len);
     if (param == NULL)
@@ -961,7 +967,9 @@ static zt_s32 _add_key_cb(struct wiphy *wiphy,
     if (params->key_len && params->key)
     {
         param->key_len = params->key_len;
-        zt_memcpy(param->key, (zt_u8 *) params->key, params->key_len);
+        /* key[0] is the tail of the param_len-byte allocation. */
+        zt_memcpy((zt_u8 *)param + ZT_OFFSETOF(struct cfg80211_crypt, key),
+                  params->key, params->key_len);
     }
     if (zt_local_cfg_get_work_mode(pnic_info) == ZT_INFRA_MODE)
     {

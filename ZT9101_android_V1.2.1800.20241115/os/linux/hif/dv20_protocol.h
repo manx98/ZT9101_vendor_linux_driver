@@ -93,6 +93,23 @@ struct zt_dv20_io {
     void (*delay_ms)(unsigned int);
 };
 
+/* Re-enumeration does not imply a DV20 hardware reset.  Only reuse an
+ * already-running firmware if the MCU startup bit and its ready mailbox
+ * both agree. A stale USB PID alone is never sufficient evidence.
+ * This probe is read-only and must precede any power/clock register writes.
+ */
+static inline int zt_dv20_fw_running(const struct zt_dv20_io *io)
+{
+    zt_dv20_u8 clk;
+    zt_dv20_u32 ready;
+
+    if (io->read8(io->context, 0x94, &clk) || !(clk & 0x01))
+        return 0;
+    if (io->read32(io->context, 0x3e8, &ready) || ready != 0x55)
+        return 0;
+    return 1;
+}
+
 static inline int zt_dv20_update8(const struct zt_dv20_io *io, unsigned int reg,
                                 unsigned int clear, unsigned int set)
 {

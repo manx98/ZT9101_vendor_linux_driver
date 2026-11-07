@@ -13,6 +13,12 @@ module_param(dv20_fw, charp, 0444);
 MODULE_PARM_DESC(dv20_fw, "DV20 firmware name under /lib/firmware");
 MODULE_FIRMWARE("zt9101/zt9101dv20.bin");
 
+/* Can be disabled for diagnostics without rebuilding the module. */
+static bool dv20_reuse_running_fw = true;
+module_param(dv20_reuse_running_fw, bool, 0644);
+MODULE_PARM_DESC(dv20_reuse_running_fw,
+                 "Reuse DV20 firmware when MCU startup and ready mailbox agree");
+
 static int dv20_read8(void *node, unsigned int reg, zt_dv20_u8 *value)
 {
     return hif_io_read(node, 0, reg, (zt_s8 *)value, 1);
@@ -47,6 +53,22 @@ static struct zt_dv20_io dv20_io(hif_node_st *node)
         .read32 = dv20_read32, .write32 = dv20_write32, .delay_ms = dv20_delay,
     };
     return io;
+}
+
+int zt_dv20_fw_is_running(hif_node_st *node)
+{
+    struct zt_dv20_io io;
+
+    if (!dv20_reuse_running_fw || node->hif_type != HIF_USB ||
+            !node->drv_ops->is_dv20)
+        return 0;
+
+    io = dv20_io(node);
+    if (!zt_dv20_fw_running(&io))
+        return 0;
+
+    LOG_I("DV20 firmware already active (MCU started, mailbox ready); reusing");
+    return 1;
 }
 
 int zt_dv20_usb_init(hif_node_st *node)

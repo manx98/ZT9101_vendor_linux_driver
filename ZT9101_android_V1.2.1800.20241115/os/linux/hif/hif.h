@@ -225,6 +225,7 @@ extern struct device_info_ops ZT9101XV20_Info;
 
 extern struct device_info_ops ZT9101DV20_Info;
 int zt_dv20_usb_init(hif_node_st *node);
+int zt_dv20_fw_is_running(hif_node_st *node);
 int zt_dv20_fw_download(hif_node_st *node);
 
 

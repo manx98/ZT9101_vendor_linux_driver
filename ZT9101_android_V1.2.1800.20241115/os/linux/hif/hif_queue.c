@@ -774,6 +774,11 @@ zt_s32 zt_data_queue_mngt_init(void *hif_node)
     /*rx queue init */
     hif_info->trx_pipe.all_rx_queue = zt_queue_node_malloc(
                                           ZT_RX_MAX_DATA_QUEUE_NODE_NUM);
+    if (!hif_info->trx_pipe.all_rx_queue)
+    {
+        zt_data_queue_mngt_term(hif_node);
+        return ZT_RETURN_FAIL;
+    }
     for (i = 0; i < ZT_RX_MAX_DATA_QUEUE_NODE_NUM; i++)
     {
         recv_node = hif_info->trx_pipe.all_rx_queue + i;
@@ -788,8 +793,9 @@ zt_s32 zt_data_queue_mngt_init(void *hif_node)
             if (HIF_USB == hif_info->hif_type)
             {
                 LOG_E("[%s] hif_alloc_buff failed", __func__);
-                zt_free_skb((struct sk_buff *)recv_node->buff);
-                zt_kfree(recv_node);
+                /* recv_node belongs to the all_rx_queue array.  Never
+                 * kfree an individual array element on alloc failure.
+                 */
             }
             continue;
         }
@@ -800,6 +806,11 @@ zt_s32 zt_data_queue_mngt_init(void *hif_node)
 
     hif_info->trx_pipe.all_tx_queue = zt_queue_node_malloc(
                                           ZT_TX_MAX_DATA_QUEUE_NODE_NUM);
+    if (!hif_info->trx_pipe.all_tx_queue)
+    {
+        zt_data_queue_mngt_term(hif_node);
+        return ZT_RETURN_FAIL;
+    }
     for (i = 0; i < ZT_TX_MAX_DATA_QUEUE_NODE_NUM; i++)
     {
 
@@ -835,10 +846,18 @@ zt_s32 zt_data_queue_mngt_term(void *hif_node)
 {
     zt_list_t *pos = NULL;
     zt_list_t *next = NULL;
+    struct sk_buff *skb = NULL;
     data_queue_node_st *data_node = NULL;
     data_queue_node_st *tx_node = NULL;
     hif_node_st  *hif_info      = (hif_node_st *)hif_node;
     data_queue_mngt_st *trxq    = &hif_info->trx_pipe;
+    zt_s32 i;
+
+    /* A callback may still be pending after a failed firmware download.
+     * Prevent resubmission before destroying the queues and their nodes.
+     */
+    hif_info->dev_removed = zt_true;
+    hif_info->hif_tr_ctrl = zt_false;
 
     if (trxq)
     {
@@ -852,16 +871,49 @@ zt_s32 zt_data_queue_mngt_term(void *hif_node)
             trxq->tx_wq.ops->workqueue_term(&trxq->tx_wq);
         }
     }
-    else
-    {
-        return ZT_RETURN_OK;
-    }
+    /* A partially initialized queue still needs its URBs released. */
 #else
     if (trxq)
     {
         tasklet_kill(&trxq->send_task);
     }
 #endif
+
+    /* The free queues do not contain in-flight URB nodes.  Kill ALL RX/TX
+     * URBs while the hif_node and skb queues are still valid.  This waits
+     * for every completion before any queue or node memory is freed.
+     */
+    if (HIF_USB == hif_info->hif_type && hif_info->ops &&
+            hif_info->ops->hif_free_buff)
+    {
+        if (trxq->all_rx_queue)
+        {
+            for (i = 0; i < ZT_RX_MAX_DATA_QUEUE_NODE_NUM; i++)
+            {
+                data_queue_node_st *node = &trxq->all_rx_queue[i];
+                if (node->hif_dev)
+                    hif_info->ops->hif_free_buff(node);
+            }
+        }
+        if (trxq->all_tx_queue)
+        {
+            for (i = 0; i < ZT_TX_MAX_DATA_QUEUE_NODE_NUM; i++)
+            {
+                data_queue_node_st *node = &trxq->all_tx_queue[i];
+                if (node->hif_dev)
+                    hif_info->ops->hif_free_buff(node);
+            }
+        }
+    }
+
+    /* A completion that started just before dev_removed was set may have
+     * queued an RX packet after zt_hif_queue_disable() drained the queue.
+     * With all URBs canceled and the tasklet stopped, it is safe to drain.
+     */
+    while ((skb = skb_dequeue(&trxq->rx_queue)) != NULL)
+    {
+        zt_free_skb(skb);
+    }
 
     if (HIF_SDIO == hif_info->hif_type)
     {
@@ -881,11 +933,6 @@ zt_s32 zt_data_queue_mngt_term(void *hif_node)
         if (data_node)
         {
             hif_info  = (hif_node_st *)data_node->hif_node;
-            if (HIF_USB == hif_info->hif_type)
-            {
-                hif_info->ops->hif_free_buff(data_node);
-            }
-
             zt_list_delete(&data_node->node);
             data_node = NULL;
             trxq->free_rx_queue.cnt--;
@@ -898,6 +945,19 @@ zt_s32 zt_data_queue_mngt_term(void *hif_node)
 
     if (trxq->all_rx_queue)
     {
+        /* The RX skb may still be owned by its node after cancellation. */
+        if (HIF_USB == hif_info->hif_type)
+        {
+            for (i = 0; i < ZT_RX_MAX_DATA_QUEUE_NODE_NUM; i++)
+            {
+                data_queue_node_st *node = &trxq->all_rx_queue[i];
+                if (node->buff)
+                {
+                    zt_free_skb((struct sk_buff *)node->buff);
+                    node->buff = NULL;
+                }
+            }
+        }
         zt_kfree(trxq->all_rx_queue);
         trxq->all_rx_queue = NULL;
     }
@@ -911,10 +971,6 @@ zt_s32 zt_data_queue_mngt_term(void *hif_node)
         if (tx_node)
         {
             hif_info  = (hif_node_st *)tx_node->hif_node;
-            if (HIF_USB == hif_info->hif_type)
-            {
-                hif_info->ops->hif_free_buff(tx_node);
-            }
             zt_list_delete(&tx_node->node);
             tx_node = NULL;
             trxq->free_tx_queue.cnt--;

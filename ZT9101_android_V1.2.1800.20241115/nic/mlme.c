@@ -1566,8 +1566,13 @@ static zt_s32 mlme_msg_send(nic_info_st *pnic_info,
     }
     if (value && len)
     {
+        if (zt_msg_copy(pmsg, 0, value, len))
+        {
+            zt_msg_del(pmsg_que, pmsg);
+            MLME_WARN("MLME message larger than allocated payload");
+            return -5;
+        }
         pmsg->len = len;
-        zt_memcpy(pmsg->value, value, len);
     }
 
     rst = zt_msg_push(pmsg_que, pmsg);
@@ -1740,8 +1745,13 @@ zt_s32 zt_mlme_conn_scan_rsp(nic_info_st *pnic_info,
         return -4;
     }
     /* copy frame */
+    if (zt_msg_copy(pmsg, 0, pmgmt, mgmt_len))
+    {
+        zt_msg_del(pmsg_que, pmsg);
+        MLME_WARN("scan response larger than allocated message");
+        return -6;
+    }
     pmsg->len = mgmt_len;
-    zt_memcpy(pmsg->value, pmgmt, mgmt_len);
     rst = zt_msg_push(pmsg_que, pmsg);
     if (rst)
     {

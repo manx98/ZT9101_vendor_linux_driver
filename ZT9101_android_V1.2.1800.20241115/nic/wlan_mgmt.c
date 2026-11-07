@@ -984,14 +984,19 @@ static zt_s32 frm_msg_send(zt_wlan_mgmt_info_t *pwlan_mgmt_info,
     /* fill message value */
     {
         rx_frm_msg_t *prx_frm_msg = (void *)pmsg->value;
-        zt_u16 value_size = ZT_OFFSETOF(rx_frm_msg_t, mgmt_frm) + mgmt_len;
-        if (value_size > pmsg->alloc_value_size)
+        zt_u32 frame_offset = ZT_OFFSETOF(rx_frm_msg_t, mgmt_frm);
+        zt_u32 value_size;
+
+        if (mgmt_len > 0xffffU - frame_offset ||
+                mgmt_len > pmsg->alloc_value_size ||
+                frame_offset > pmsg->alloc_value_size - mgmt_len)
         {
             WLAN_MGMT_ERROR("frame size(%d) over limite(%d)",
                             mgmt_len, pmsg->alloc_value_size);
+            zt_msg_del(pmsg_que, pmsg);
             return -2;
         }
-        pmsg->len = value_size;
+        value_size = frame_offset + mgmt_len;
         if (phy_sta)
         {
             prx_frm_msg->phy_sta            = *phy_sta;
@@ -1005,8 +1010,13 @@ static zt_s32 frm_msg_send(zt_wlan_mgmt_info_t *pwlan_mgmt_info,
             prx_frm_msg->is_phy_sta_valid           = zt_false;
         }
 
-        void *tmp_mgmt_fram = (zt_s8 *)prx_frm_msg + ZT_OFFSETOF(rx_frm_msg_t, mgmt_frm);
-        zt_memcpy(tmp_mgmt_fram, pmgmt, mgmt_len);
+        if (zt_msg_copy(pmsg, frame_offset, pmgmt, mgmt_len))
+        {
+            zt_msg_del(pmsg_que, pmsg);
+            WLAN_MGMT_ERROR("cannot copy management frame into message");
+            return -2;
+        }
+        pmsg->len = value_size;
     }
 
     /* new message entity */
